@@ -1,0 +1,58 @@
+{
+  "name": "yorumi",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Yorumi - Anime & Manga Streamer",
+  "author": "Yorumi Team",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b tsconfig.app.json tsconfig.node.json && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^143.0.4",
+    "@upstash/redis": "^1.36.1",
+    "aniwatch": "^2.27.9",
+    "axios": "^1.13.2",
+    "cheerio": "^1.1.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "embla-carousel-autoplay": "^8.6.0",
+    "embla-carousel-react": "^8.6.0",
+    "express": "^5.2.1",
+    "firebase": "^12.8.0",
+    "fuzzball": "^2.2.3",
+    "hls.js": "^1.6.15",
+    "lucide-react": "^0.562.0",
+    "puppeteer-core": "^24.35.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.12.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "fuse.js": "^7.1.0",
+    "globals": "^16.5.0",
+    "graphql-request": "^7.4.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.4.17",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "npm:rolldown-vite@7.2.5"
+  },
+  "overrides": {
+    "vite": "npm:rolldown-vite@7.2.5"
+  }
+}

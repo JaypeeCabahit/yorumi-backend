@@ -1,0 +1,149 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0a0a0a;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Reserve space for scrollbar to prevent layout shift */
+  scrollbar-gutter: stable;
+  /* Overlay scrollbar for modern browsers */
+  overflow-y: overlay;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #150F26;
+  @apply text-white;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Scrollbar hiding utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-copy {
+  -webkit-touch-callout: none;
+  /* iOS Safari */
+  -webkit-user-select: none;
+  /* Safari */
+  -khtml-user-select: none;
+  /* Konqueror HTML */
+  -moz-user-select: none;
+  /* Firefox */
+  -ms-user-select: none;
+  /* Internet Explorer/Edge */
+  user-select: none;
+  /* Standard syntax */
+}
+
+/* Shimmer animation for skeleton loaders */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Force subtitle cues to readable white styling */
+video::cue {
+  color: #ffffff;
+  background-color: rgba(0, 0, 0, 0.75);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+/* Watch-page compositor safe mode:
+   aggressively reduces expensive effects while video is open. */
+html.watch-safe-mode *,
+body.watch-safe-mode * {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  animation: none !important;
+  transition: none !important;
+  will-change: auto !important;
+}
+
+html.watch-safe-mode .watch-page-backdrop,
+body.watch-safe-mode .watch-page-backdrop {
+  filter: blur(72px) !important;
+}
+
+html.watch-safe-mode .menu-backdrop-blur,
+body.watch-safe-mode .menu-backdrop-blur {
+  -webkit-backdrop-filter: blur(10px) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+html.watch-safe-mode .menu-panel-blur,
+body.watch-safe-mode .menu-panel-blur {
+  -webkit-backdrop-filter: blur(24px) !important;
+  backdrop-filter: blur(24px) !important;
+}
+
+html.watch-safe-mode nav,
+body.watch-safe-mode nav,
+html.watch-safe-mode header,
+body.watch-safe-mode header {
+  background-image: none !important;
+}
+
+html.watch-safe-mode video {
+  transform: none !important;
+  filter: none !important;
+}
