@@ -251,6 +251,10 @@ const MEDIA_FIELDS = `
         site
     }
     synonyms
+    trailer {
+        id
+        site
+    }
     staff(perPage: 3, sort: [RELEVANCE, ID]) {
         edges {
             role
@@ -1132,6 +1136,16 @@ export const anilistService = {
             }
         `;
 
+        const filterMedia = (media: any) => {
+            if (media?.recommendations?.nodes) {
+                media.recommendations.nodes = media.recommendations.nodes.filter((node: any) => !node.mediaRecommendation?.isAdult);
+            }
+            if (media?.relations?.edges) {
+                media.relations.edges = media.relations.edges.filter((edge: any) => !edge.node?.isAdult);
+            }
+            return media;
+        };
+
         try {
             const response = await rateLimitedRequest(queryById, { id }, { cacheTtlSeconds: 3600 });
             let media = response.data.Media;
@@ -1139,18 +1153,16 @@ export const anilistService = {
                 const byMal = await rateLimitedRequest(queryByMalId, { idMal: id }, { cacheTtlSeconds: 3600 });
                 media = byMal.data.Media;
             }
-            if (media && media.recommendations && media.recommendations.nodes) {
-                media.recommendations.nodes = media.recommendations.nodes.filter((node: any) => !node.mediaRecommendation?.isAdult);
-            }
-            if (media && media.recommendations && media.recommendations.nodes) {
-                media.recommendations.nodes = media.recommendations.nodes.filter((node: any) => !node.mediaRecommendation?.isAdult);
-            }
-            if (media && media.relations && media.relations.edges) {
-                media.relations.edges = media.relations.edges.filter((edge: any) => !edge.node?.isAdult);
-            }
-            return media;
-        } catch (error) {
-            console.error('Error fetching anime by ID:', error);
+            return filterMedia(media);
+        } catch (primaryError: any) {
+            // AniList returns HTTP 404 when the ID doesn't exist as an AniList ID.
+            // Fall back to a MAL ID lookup before giving up.
+            try {
+                const byMal = await rateLimitedRequest(queryByMalId, { idMal: id }, { cacheTtlSeconds: 3600 });
+                const media = byMal.data.Media;
+                if (media) return filterMedia(media);
+            } catch { /* both lookups failed */ }
+            console.error('Error fetching anime by ID:', primaryError);
             return null;
         }
     },
