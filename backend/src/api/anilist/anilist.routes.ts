@@ -11,13 +11,22 @@ const HOME_FAST_CACHE_KEY = 'anilist:home:fast:v1';
 const HOME_FAST_TTL_SECONDS = 120;
 let homeFastMemoryCache: { data: any; timestamp: number } | null = null;
 let homeFastRefreshPromise: Promise<any> | null = null;
+const FORCED_ANIMEPAHE_SESSIONS: Record<number, string> = {
+    21: '086c4017-75aa-5c60-83b4-2099f9c6dfc2', // ONE PIECE
+};
 const isAnimePaheSession = (value: unknown) =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 const normalizeTitleToken = (value: string) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const hasExplicitSeasonMarker = (title: string) =>
+    /\bseason\s*\d+\b/i.test(String(title || '')) || /\b\d+(st|nd|rd|th)\s*season\b/i.test(String(title || ''));
 const getSeasonNumber = (title: string) => {
     const match = String(title || '').match(/\bseason\s*(\d+)\b/i) || String(title || '').match(/\b(\d+)(st|nd|rd|th)\s*season\b/i);
     return match ? parseInt(match[1], 10) : 1;
 };
+const getTargetSeasonNumber = (details: any) =>
+    buildScraperQueries(details).map((title) => getSeasonNumber(title)).find((season) => season > 1) || 1;
+const hasExplicitSequelSeason = (details: any) =>
+    buildScraperQueries(details).some((title) => hasExplicitSeasonMarker(title) && getSeasonNumber(title) > 1);
 const buildScraperQueries = (details: any): string[] => {
     const queries = new Set<string>();
     const add = (value: unknown) => {
@@ -70,8 +79,12 @@ const rankAgainstAnime = (details: any, candidate: any) => {
     const titles = buildScraperQueries(details);
     const titleScore = titles.reduce((best, title) => Math.max(best, rankCandidate(title, candidate)), 0);
     let score = titleScore;
+    const targetSeason = getTargetSeasonNumber(details);
+    const candidateTitle = String(candidate?.title || '');
+    const candidateSeason = getSeasonNumber(candidateTitle);
+    const candidateHasExplicitSeason = hasExplicitSeasonMarker(candidateTitle);
 
-    const expectedEpisodes = Number(details?.episodes || 0);
+    const expectedEpisodes = Number(details?.nextAiringEpisode?.episode ? details.nextAiringEpisode.episode - 1 : (details?.episodes || 0));
     const candidateEpisodes = Number(candidate?.episodes || 0);
     if (expectedEpisodes > 0 && candidateEpisodes > 0) {
         const diff = Math.abs(candidateEpisodes - expectedEpisodes);
@@ -81,12 +94,19 @@ const rankAgainstAnime = (details: any, candidate: any) => {
         else score -= 35;
     }
 
+    if (targetSeason > 1) {
+        if (candidateHasExplicitSeason && candidateSeason === targetSeason) score += 120;
+        else if (candidateHasExplicitSeason && candidateSeason !== targetSeason) score -= 160;
+        else score -= 60;
+    }
+
     const animeYear = Number(details?.seasonYear || 0);
     const candidateYear = Number(candidate?.year || 0);
     if (animeYear > 0 && candidateYear > 0) {
         const diff = Math.abs(candidateYear - animeYear);
         if (diff === 0) score += 10;
-        else if (diff > 1) score -= 10;
+        else if (diff === 1) score += 4;
+        else score -= 24;
     }
 
     return score;
@@ -114,6 +134,54 @@ const findRankedScraperCandidates = async (details: any) => {
         }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score);
+};
+const pickPreferredScraperCandidate = (
+    details: any,
+    rankedCandidates: Array<{ candidate: any; score: number }>,
+    currentSession?: string | null
+) => {
+    if (!Array.isArray(rankedCandidates) || rankedCandidates.length === 0) return null;
+
+    const sequelSeason = hasExplicitSequelSeason(details);
+    const targetSeason = getTargetSeasonNumber(details);
+    const targetYear = Number(details?.seasonYear || 0);
+    const refined = rankedCandidates.filter(({ candidate }) => {
+        const candidateTitle = String(candidate?.title || '');
+        const candidateYear = Number(candidate?.year || 0);
+        if (!sequelSeason) return true;
+        if (!hasExplicitSeasonMarker(candidateTitle)) return false;
+        if (getSeasonNumber(candidateTitle) !== targetSeason) return false;
+        if (targetYear > 0 && candidateYear > 0 && Math.abs(candidateYear - targetYear) > 1) return false;
+        return true;
+    });
+
+    const pool = refined.length > 0 ? refined : rankedCandidates;
+    return pool[0] || null;
+};
+const isCompatibleResolvedSession = (
+    resolvedSession: string | null | undefined,
+    rankedCandidates: Array<{ candidate: any; score: number }>
+) => {
+    const current = String(resolvedSession || '').trim();
+    if (!current) return false;
+
+    const currentEntry = rankedCandidates.find(
+        ({ candidate }) => String(candidate?.session || '').trim() === current
+    );
+    if (!currentEntry || currentEntry.score <= 0) return false;
+
+    const bestScore = Number(rankedCandidates[0]?.score || 0);
+    if (bestScore <= 0) return true;
+
+    return bestScore - currentEntry.score <= 80;
+};
+const getExpectedEpisodeCount = (details: any) =>
+    Number(details?.nextAiringEpisode?.episode ? details.nextAiringEpisode.episode - 1 : (details?.episodes || 0));
+const hasSufficientEpisodes = (details: any, episodes: any[]) => {
+    if (!Array.isArray(episodes) || episodes.length === 0) return false;
+    const expectedEpisodes = getExpectedEpisodeCount(details);
+    if (expectedEpisodes > 0 && episodes.length < expectedEpisodes) return false;
+    return true;
 };
 
 const getFreshHomeFastFromMemory = () => {
@@ -430,14 +498,17 @@ router.get('/anime/:id/fast', async (req, res) => {
         }
 
         // Fast path: serve composed response from Redis (skip for scraper IDs)
-        const composedCacheKey = `fast-composed:v2:${id}`;
+        const composedCacheKey = `fast-composed:v3:${id}`;
         if (!id.startsWith('s:')) {
             try {
                 const composedCached = await redis.get<any>(composedCacheKey).catch(() => null);
-                if (composedCached && Array.isArray(composedCached.episodes) && composedCached.episodes.length > 0) {
+                if (composedCached && hasSufficientEpisodes(composedCached.anime, composedCached.episodes)) {
                     res.set('Cache-Control', 'public, max-age=60, s-maxage=120, stale-while-revalidate=300');
                     res.json(composedCached);
                     return;
+                }
+                if (composedCached) {
+                    redis.del(composedCacheKey).catch(() => undefined);
                 }
             } catch { /* fall through */ }
         }
@@ -499,15 +570,35 @@ router.get('/anime/:id/fast', async (req, res) => {
                 return;
             }
 
-            const mapped = await mappingService.getMapping(String(numericId)).catch(() => null);
+            const forcedSession = FORCED_ANIMEPAHE_SESSIONS[numericId];
+            if (forcedSession) {
+                resolvedSession = forcedSession;
+            }
+
+            const mapped = !resolvedSession
+                ? await mappingService.getMapping(String(numericId)).catch(() => null)
+                : null;
             if (mapped?.id) {
                 resolvedSession = String(mapped.id).trim();
             }
 
-            if (!resolvedSession) {
+            const shouldForceSeasonRefresh = hasExplicitSequelSeason(animeDetails);
+            if (resolvedSession || shouldForceSeasonRefresh) {
                 rankedCandidates = await findRankedScraperCandidates(animeDetails);
-                const best = rankedCandidates[0]?.candidate;
-                if (best?.session) {
+
+                if (resolvedSession && !isCompatibleResolvedSession(resolvedSession, rankedCandidates)) {
+                    await mappingService.deleteMapping(String(numericId)).catch(() => undefined);
+                    resolvedSession = null;
+                }
+            }
+
+            if (!resolvedSession || shouldForceSeasonRefresh) {
+                if (rankedCandidates.length === 0) {
+                    rankedCandidates = await findRankedScraperCandidates(animeDetails);
+                }
+                const preferred = pickPreferredScraperCandidate(animeDetails, rankedCandidates, resolvedSession);
+                const best = preferred?.candidate || rankedCandidates[0]?.candidate;
+                if (best?.session && String(best.session) !== String(resolvedSession || '')) {
                     resolvedSession = String(best.session);
                     await mappingService.saveMapping(String(numericId), resolvedSession, String(best.title || animeDetails?.title?.english || animeDetails?.title?.romaji || '')).catch(() => undefined);
                 }
@@ -520,25 +611,28 @@ router.get('/anime/:id/fast', async (req, res) => {
             episodes = Array.isArray(ep?.episodes) ? ep.episodes : [];
         }
 
-        if (episodes.length === 0 && animeDetails && !id.startsWith('s:')) {
+        if (!hasSufficientEpisodes(animeDetails, episodes) && animeDetails && !id.startsWith('s:')) {
             const numericId = parseInt(id, 10);
             if (!Number.isNaN(numericId)) {
                 if (rankedCandidates.length === 0) {
                     rankedCandidates = await findRankedScraperCandidates(animeDetails);
                 }
-                const fallbackCandidate = rankedCandidates.find(
-                    ({ candidate }) => String(candidate?.session || '') !== String(resolvedSession || '')
-                )?.candidate;
-                if (fallbackCandidate?.session) {
-                    resolvedSession = String(fallbackCandidate.session);
+                for (const { candidate } of rankedCandidates) {
+                    const candidateSession = String(candidate?.session || '');
+                    if (!candidateSession || candidateSession === String(resolvedSession || '')) continue;
+
+                    const retry = await scraperService.getEpisodes(candidateSession).catch(() => ({ episodes: [] }));
+                    const retryEpisodes = Array.isArray(retry?.episodes) ? retry.episodes : [];
+                    if (!hasSufficientEpisodes(animeDetails, retryEpisodes)) continue;
+
+                    resolvedSession = candidateSession;
+                    episodes = retryEpisodes;
                     await mappingService.saveMapping(
                         String(numericId),
                         resolvedSession,
-                        String(fallbackCandidate.title || animeDetails?.title?.english || animeDetails?.title?.romaji || '')
+                        String(candidate.title || animeDetails?.title?.english || animeDetails?.title?.romaji || '')
                     ).catch(() => undefined);
-
-                    const retry = await scraperService.getEpisodes(resolvedSession).catch(() => ({ episodes: [] }));
-                    episodes = Array.isArray(retry?.episodes) ? retry.episodes : [];
+                    break;
                 }
             }
         }
@@ -550,7 +644,7 @@ router.get('/anime/:id/fast', async (req, res) => {
         };
 
         // Cache composed response in Redis for 3 minutes
-        if (!id.startsWith('s:') && episodes.length > 0) {
+        if (!id.startsWith('s:') && hasSufficientEpisodes(animeDetails, episodes)) {
             redis.set(composedCacheKey, result, { ex: 180 }).catch(() => undefined);
         }
 
